@@ -1,0 +1,38 @@
+{
+  "abi": [
+    { "inputs": [], "name": "owner", "outputs": [{ "internalType": "address", "name": "", "type": "address" }], "stateMutability": "view", "type": "function" },
+    { "inputs": [], "name": "turboToken", "outputs": [{ "internalType": "address", "name": "", "type": "address" }], "stateMutability": "view", "type": "function" },
+    { "inputs": [], "name": "monadGamesID", "outputs": [{ "internalType": "address", "name": "", "type": "address" }], "stateMutability": "view", "type": "function" },
+    { "inputs": [], "name": "treasury", "outputs": [{ "internalType": "address", "name": "", "type": "address" }], "stateMutability": "view", "type": "function" },
+    { "inputs": [], "name": "gameServer", "outputs": [{ "internalType": "address", "name": "", "type": "address" }], "stateMutability": "view", "type": "function" },
+
+    { "inputs": [], "name": "SCORE_TO_TOKEN_RATIO", "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }], "stateMutability": "view", "type": "function" },
+    { "inputs": [], "name": "nextItemId", "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }], "stateMutability": "view", "type": "function" },
+
+    { "inputs": [ { "internalType": "uint256", "name": "", "type": "uint256" } ],
+      "name": "gameItems",
+      "outputs": [
+        { "internalType": "string", "name": "name", "type": "string" },
+        { "internalType": "uint256", "name": "price", "type": "uint256" },
+        { "internalType": "uint8", "name": "itemType", "type": "uint8" },
+        { "internalType": "bool", "name": "isActive", "type": "bool" },
+        { "internalType": "uint256", "name": "speedBoost", "type": "uint256" },
+        { "internalType": "uint256", "name": "gripBoost", "type": "uint256" },
+        { "internalType": "uint256", "name": "armorBoost", "type": "uint256" },
+        { "internalType": "uint256", "name": "nitroBoost", "type": "uint256" }
+      ],
+      "stateMutability": "view", "type": "function"
+    },
+
+    { "inputs": [ { "internalType": "address", "name": "player", "type": "address" } ],
+      "name": "getPlayerInventory",
+      "outputs": [
+        { "internalType": "uint256[]", "name": "itemIds", "type": "uint256[]" },
+        { "internalType": "uint256[]", "name": "counts", "type": "uint256[]" },
+        { "internalType": "bool[]", "name": "permanentItems", "type": "bool[]" },
+        { "internalType": "uint256", "name": "bikeLevel", "type": "uint256" }
+      ],
+      "stateMutability": "view", "type": "function"
+    }
+  ]
+}
