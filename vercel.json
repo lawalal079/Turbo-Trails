@@ -1,0 +1,9 @@
+{
+  "framework": "nextjs",
+  "installCommand": "npm ci --omit=dev",
+  "buildCommand": "next build",
+  "outputDirectory": ".next",
+  "env": {
+    "NEXT_TELEMETRY_DISABLED": "1"
+  }
+}
