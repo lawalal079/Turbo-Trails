@@ -1,5 +1,5 @@
 import { usePrivy, useLogin } from '@privy-io/react-auth';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import GameEngine from '../components/GameEngine';
 import MainMenu from '../components/MainMenu';
 import Shop from '../components/Shop';
@@ -13,6 +13,8 @@ export default function Home() {
   const [playerData, setPlayerData] = useState(null);
   const [username, setUsername] = useState('');
   const [selectedBikeProfile, setSelectedBikeProfile] = useState('default');
+  const pendingResultRef = useRef(null);
+  const submittedRef = useRef(false);
 
   // Fetch player data when authenticated
   useEffect(() => {
@@ -38,7 +40,8 @@ export default function Home() {
     try {
       const response = await fetch(`/api/player-data?wallet=${walletAddress}`);
       const data = await response.json();
-      setPlayerData(data);
+      // API returns { success, playerData }
+      setPlayerData(data?.playerData || null);
     } catch (error) {
       console.error('Error fetching player data:', error);
     }
@@ -76,17 +79,28 @@ export default function Home() {
     setGameState('game');
   };
 
-  const endGame = (score) => {
+  const endGame = async (payload) => {
+    const isObj = payload && typeof payload === 'object';
+    const score = isObj ? Number(payload.score || 0) : Number(payload || 0);
+    const distanceKm = isObj ? Number(payload.distanceKm || 0) : undefined;
+    const wallet = getWalletAddress();
     if (gameMode === 'career') {
-      submitScore(score);
+      pendingResultRef.current = { wallet, score, distanceKm };
+      submittedRef.current = false;
+      try {
+        await submitScore(score, distanceKm);
+        submittedRef.current = true;
+      } catch (_) {
+        // leave pending for beacon fallback
+      }
     }
     setGameState('menu');
     setGameMode(null);
   };
 
-  const submitScore = async (score) => {
+  const submitScore = async (score, distanceKm) => {
     try {
-      await fetch('/api/submit-score', {
+      const resp = await fetch('/api/client-submit-score', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -94,8 +108,15 @@ export default function Home() {
         body: JSON.stringify({
           wallet: getWalletAddress(),
           score: score,
+          distanceKm: typeof distanceKm === 'number' ? distanceKm : undefined,
         }),
       });
+      const data = await resp.json();
+      if (!resp.ok) {
+        console.error('Score submit failed:', data);
+      } else {
+        console.log('Score submitted:', data);
+      }
       // Refresh player data after score submission
       const walletAddress = getWalletAddress();
       if (walletAddress) {
@@ -105,6 +126,31 @@ export default function Home() {
       console.error('Error submitting score:', error);
     }
   };
+
+  // Background submission on page hide/close using sendBeacon
+  useEffect(() => {
+    const handler = () => {
+      try {
+        const pending = pendingResultRef.current;
+        if (!pending || submittedRef.current) return;
+        const payload = {
+          wallet: pending.wallet || getWalletAddress(),
+          score: Number(pending.score || 0),
+          distanceKm: typeof pending.distanceKm === 'number' ? Number(pending.distanceKm) : undefined,
+        };
+        const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
+        navigator.sendBeacon('/api/client-submit-score', blob);
+      } catch (e) {
+        // ignore
+      }
+    };
+    window.addEventListener('pagehide', handler);
+    window.addEventListener('beforeunload', handler);
+    return () => {
+      window.removeEventListener('pagehide', handler);
+      window.removeEventListener('beforeunload', handler);
+    };
+  }, []);
 
   // Resolve the current wallet address (prefers cross-app)
   const walletAddress = getWalletAddress();
@@ -161,6 +207,7 @@ export default function Home() {
           onGameEnd={endGame}
           onBackToMenu={() => setGameState('menu')}
           bikeProfile={selectedBikeProfile}
+          walletAddress={walletAddress}
         />
       )}
       
@@ -168,13 +215,17 @@ export default function Home() {
         <Shop
           playerData={playerData}
           onBackToMenu={() => setGameState('menu')}
-          onPurchase={fetchPlayerData}
+          onPurchase={() => {
+            const addr = getWalletAddress();
+            if (addr) fetchPlayerData(addr);
+          }}
         />
       )}
       
       {gameState === 'leaderboard' && (
         <Leaderboard
           onBackToMenu={() => setGameState('menu')}
+          currentWallet={walletAddress}
         />
       )}
     </div>

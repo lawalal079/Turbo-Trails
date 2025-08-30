@@ -465,6 +465,29 @@ export default function MainMenu({
           <h1 className="game-title">TURBO TRAILS</h1>
         </div>
 
+        {/* Username CTA outside the dropdown */}
+        {(!usernameLoading && !resolvedUsername) && (
+          <div className="username-cta" style={{ display: 'flex', justifyContent: 'center', margin: '8px 0 16px' }}>
+            <button
+              className="reserve-username-btn"
+              onClick={() => {
+                try { window.open('https://monad-games-id-site.vercel.app/', '_blank'); } catch {}
+              }}
+              style={{
+                padding: '8px 14px',
+                borderRadius: 8,
+                background: '#0ff',
+                color: '#000',
+                fontWeight: 700,
+                border: '1px solid rgba(0,255,255,0.4)',
+                cursor: 'pointer'
+              }}
+            >
+              Reserve username
+            </button>
+          </div>
+        )}
+
         {/* Top-right user menu */}
         <div className="user-menu-container" ref={menuRef}>
           <button
@@ -597,52 +620,7 @@ export default function MainMenu({
 
         {!showModeSelection ? (
           <div className="menu-content">
-            {/* Bike selection */}
-            <div className="bike-select">
-              <h3>Select Bike</h3>
-              <div className="bike-options">
-                <button 
-                  className={`bike-btn ${selectedBikeProfile === 'default' ? 'active' : ''}`}
-                  onClick={() => onSelectBikeProfile && onSelectBikeProfile('default')}
-                  title="Default: your custom default bike"
-                >
-                  🆕 Default
-                </button>
-                <button 
-                  className={`bike-btn ${selectedBikeProfile === 'cruiser' ? 'active' : ''} ${!unlocked.cruiser ? 'locked' : ''}`}
-                  onClick={() => {
-                    if (!unlocked.cruiser) return alert('Cruiser is locked. Purchase/unlock it in the Shop.');
-                    onSelectBikeProfile && onSelectBikeProfile('cruiser');
-                  }}
-                  disabled={!unlocked.cruiser}
-                  title={!unlocked.cruiser ? 'Locked – unlock in Shop' : 'Cruiser: smooth, lower top speed'}
-                >
-                  🚲 Cruiser {(!unlocked.cruiser) ? '🔒' : ''}
-                </button>
-                <button 
-                  className={`bike-btn ${selectedBikeProfile === 'sport' ? 'active' : ''} ${!unlocked.sport ? 'locked' : ''}`}
-                  onClick={() => {
-                    if (!unlocked.sport) return alert('Sport is locked. Purchase/unlock it in the Shop.');
-                    onSelectBikeProfile && onSelectBikeProfile('sport');
-                  }}
-                  disabled={!unlocked.sport}
-                  title={!unlocked.sport ? 'Locked – unlock in Shop' : 'Sport: balanced acceleration and top speed'}
-                >
-                  🏍️ Sport {(!unlocked.sport) ? '🔒' : ''}
-                </button>
-                <button 
-                  className={`bike-btn ${selectedBikeProfile === 'hyper' ? 'active' : ''} ${!unlocked.hyper ? 'locked' : ''}`}
-                  onClick={() => {
-                    if (!unlocked.hyper) return alert('Hyper is locked. Purchase/unlock it in the Shop.');
-                    onSelectBikeProfile && onSelectBikeProfile('hyper');
-                  }}
-                  disabled={!unlocked.hyper}
-                  title={!unlocked.hyper ? 'Locked – unlock in Shop' : 'Hyper: fastest acceleration and top speed'}
-                >
-                  🚀 Hyper {(!unlocked.hyper) ? '🔒' : ''}
-                </button>
-              </div>
-            </div>
+            {/* Bike selection removed per request */}
 
             <div className="game-modes">
               <button 
@@ -685,24 +663,64 @@ export default function MainMenu({
             <h2>Choose Race Type</h2>
             <div className="race-options">
               <button 
-                className="race-option pvp-option"
-                onClick={() => handleRaceMode('pvp')}
+                className="race-option pvp-option disabled"
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                aria-disabled="true"
+                disabled
+                title="Coming soon"
+                style={{ opacity: 0.6, cursor: 'not-allowed', position: 'relative' }}
               >
                 <div className="option-icon">👥</div>
                 <div className="option-info">
                   <h3>Race a Friend</h3>
                   <p>Live PvP with betting</p>
                 </div>
+                <div 
+                  className="coming-soon-badge"
+                  style={{
+                    position: 'absolute',
+                    top: 8,
+                    right: 8,
+                    background: '#222',
+                    color: '#0ff',
+                    padding: '4px 8px',
+                    borderRadius: 6,
+                    fontSize: 12,
+                    border: '1px solid rgba(0,255,255,0.3)'
+                  }}
+                >
+                  Coming soon
+                </div>
               </button>
 
               <button 
-                className="race-option ghost-option"
-                onClick={() => handleRaceMode('ghost')}
+                className="race-option ghost-option disabled"
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                aria-disabled="true"
+                disabled
+                title="Coming soon"
+                style={{ opacity: 0.6, cursor: 'not-allowed', position: 'relative' }}
               >
                 <div className="option-icon">👻</div>
                 <div className="option-info">
                   <h3>Race a Ghost</h3>
                   <p>Solo race against recorded runs</p>
+                </div>
+                <div 
+                  className="coming-soon-badge"
+                  style={{
+                    position: 'absolute',
+                    top: 8,
+                    right: 8,
+                    background: '#222',
+                    color: '#0ff',
+                    padding: '4px 8px',
+                    borderRadius: 6,
+                    fontSize: 12,
+                    border: '1px solid rgba(0,255,255,0.3)'
+                  }}
+                >
+                  Coming soon
                 </div>
               </button>
             </div>

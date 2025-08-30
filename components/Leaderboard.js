@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 
-export default function Leaderboard({ onBackToMenu }) {
+export default function Leaderboard({ onBackToMenu, currentWallet }) {
   const [leaderboardData, setLeaderboardData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [timeFilter, setTimeFilter] = useState('all-time'); // all-time, weekly, daily
+  const [usernameMap, setUsernameMap] = useState({}); // walletLower -> username or null
 
   useEffect(() => {
     fetchLeaderboard();
@@ -14,13 +15,51 @@ export default function Leaderboard({ onBackToMenu }) {
     try {
       const response = await fetch(`/api/leaderboard?filter=${timeFilter}`);
       const data = await response.json();
-      setLeaderboardData(data.leaderboard || []);
+      const rows = data.leaderboard || [];
+      setLeaderboardData(rows);
+      // Kick off username resolution for rows missing username
+      try {
+        const toResolve = rows
+          .map(p => (p?.wallet || '').toLowerCase())
+          .filter(addr => addr && usernameMap[addr] === undefined);
+        if (toResolve.length > 0) {
+          // Resolve sequentially to be gentle; could be parallel if needed
+          (async () => {
+            const updates = {};
+            for (const addr of toResolve) {
+              try {
+                const res = await fetch(`https://monad-games-id-site.vercel.app/api/check-wallet?wallet=${addr}`);
+                if (res.ok) {
+                  const j = await res.json();
+                  updates[addr] = (j?.hasUsername && j?.user?.username) ? String(j.user.username) : null;
+                } else {
+                  updates[addr] = null;
+                }
+              } catch {
+                updates[addr] = null;
+              }
+            }
+            if (Object.keys(updates).length) {
+              setUsernameMap(prev => ({ ...prev, ...updates }));
+            }
+          })();
+        }
+      } catch {}
     } catch (error) {
       console.error('Error fetching leaderboard:', error);
     } finally {
       setLoading(false);
     }
   };
+
+  const topFive = leaderboardData.slice(0, 5);
+  const displayNameFor = (p) => (usernameMap[(p.wallet||'').toLowerCase()] ?? p.username) || 'Anonymous';
+
+  // Compute "My Rank" and score
+  const myAddrLower = (currentWallet || '').toLowerCase();
+  const myIndex = leaderboardData.findIndex(p => (p?.wallet || '').toLowerCase() === myAddrLower);
+  const myRank = myIndex >= 0 ? (myIndex + 1) : null;
+  const myEntry = myIndex >= 0 ? leaderboardData[myIndex] : null;
 
   const formatScore = (score) => {
     return score.toLocaleString();
@@ -45,6 +84,7 @@ export default function Leaderboard({ onBackToMenu }) {
   };
 
   return (
+    <>
     <div className="leaderboard-container">
       <div className="leaderboard-header">
         <button className="back-button" onClick={onBackToMenu}>
@@ -90,31 +130,50 @@ export default function Leaderboard({ onBackToMenu }) {
                   <div key={player.wallet} className={`podium-place place-${index + 1}`}>
                     <div className="podium-rank">{getRankIcon(index + 1)}</div>
                     <div className="podium-player">
-                      <div className="player-name">{player.username || formatAddress(player.wallet)}</div>
+                      <div className="player-name">{displayNameFor(player)}</div>
                       <div className="player-score">{formatScore(player.score)}</div>
                     </div>
                   </div>
                 ))}
               </div>
 
-              {/* Full Rankings */}
+              {/* My Rank Card (moved below podium) */}
+              <div className="my-rank-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', borderRadius: 12, background: 'rgba(255,255,255,0.03)', margin: '12px 0' }}>
+                <div className="left">
+                  <div className="player-name" style={{ fontWeight: 600 }}>
+                    {myEntry
+                      ? displayNameFor(myEntry)
+                      : (currentWallet
+                          ? (usernameMap[(currentWallet||'').toLowerCase()] ?? 'Anonymous')
+                          : 'Not signed in')}
+                  </div>
+                </div>
+                <div className="right" style={{ textAlign: 'right' }}>
+                  <div><span style={{ opacity: 0.8 }}>Rank:</span> {myRank ? `#${myRank}` : '—'}</div>
+                  <div><span style={{ opacity: 0.8 }}>Highest Score:</span> {myEntry ? formatScore(myEntry.score) : '—'}</div>
+                </div>
+              </div>
+
+              {/* Full Rankings (Top 5 only) */}
               <div className="rankings-list">
                 <div className="rankings-header">
                   <span className="rank-col">Rank</span>
                   <span className="player-col">Player</span>
                   <span className="score-col">Score</span>
-                  <span className="tokens-col">Tokens Earned</span>
                 </div>
                 
-                {leaderboardData.map((player, index) => (
-                  <div key={player.wallet} className="ranking-row">
+                {topFive.map((player, index) => (
+                  <div
+                    key={player.wallet}
+                    className="ranking-row"
+                  >
                     <span className="rank-col">
                       {getRankIcon(index + 1)}
                     </span>
                     <span className="player-col">
                       <div className="player-info">
                         <div className="player-name">
-                          {player.username || formatAddress(player.wallet)}
+                          {displayNameFor(player)}
                         </div>
                         <div className="player-address">
                           {formatAddress(player.wallet)}
@@ -124,12 +183,10 @@ export default function Leaderboard({ onBackToMenu }) {
                     <span className="score-col">
                       {formatScore(player.score)}
                     </span>
-                    <span className="tokens-col">
-                      🪙 {formatScore(player.tokensEarned || player.score * 10)}
-                    </span>
                   </div>
                 ))}
               </div>
+
             </>
           )}
         </div>
@@ -158,5 +215,8 @@ export default function Leaderboard({ onBackToMenu }) {
         </div>
       </div>
     </div>
+    
+    {/* Modals removed: using My Rank card instead */}
+    </>
   );
 }

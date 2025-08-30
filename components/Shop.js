@@ -1,19 +1,78 @@
 import { useState, useEffect, useRef } from 'react';
+import { ethers } from 'ethers';
+import { useWallets, usePrivy, useCrossAppAccounts } from '@privy-io/react-auth';
+import { signPermit2AndBuy, buildPermit2TypedDataAndBody, postPermit2Buy, getOnchainTotal } from '../lib/permit2Client';
+import turboTokenAbi from '../lib/abi/turboToken.json';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader';
 import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader';
 
 export default function Shop({ playerData, onBackToMenu, onPurchase }) {
+  const { wallets } = useWallets?.() || { wallets: [] };
+  const { user } = usePrivy?.() || {};
+  const { signTypedData: crossAppSignTypedData } = useCrossAppAccounts?.() || {};
   const [selectedCategory, setSelectedCategory] = useState('single-use');
   const [selectedItem, setSelectedItem] = useState(null);
   const [quantity, setQuantity] = useState(1);
   const [shopItems, setShopItems] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [turboBalanceDisplay, setTurboBalanceDisplay] = useState('0');
   const modelViewerRef = useRef(null);
   const sceneRef = useRef(null);
   const [viewerReady, setViewerReady] = useState(false);
   // Track the latest model load request to avoid out-of-order async overwrites
   const modelLoadIdRef = useRef(0);
+
+  // Prefer the embedded wallet provider that matches playerData.wallet
+  const getEmbeddedProvider = async () => {
+    try {
+      const target = (playerData?.wallet || '').toLowerCase();
+      // 1) Try to match by address in wallets[]
+      if (wallets && wallets.length) {
+        const match = wallets.find(w => (w?.address || '').toLowerCase() === target);
+        if (match?.getEthereumProvider) {
+          try { return await match.getEthereumProvider(); } catch {}
+        }
+        // Otherwise pick any embedded-like wallet
+        for (const w of wallets) {
+          const t = (w?.walletClientType || w?.type || '').toLowerCase();
+          const isEmbedded = t.includes('privy') || t.includes('embedded');
+          if (isEmbedded && w?.getEthereumProvider) {
+            try { return await w.getEthereumProvider(); } catch {}
+          }
+        }
+      }
+      // 2) As a last resort, some environments expose window.ethereum
+      if (typeof window !== 'undefined' && window.ethereum) return window.ethereum;
+    } catch {}
+    return null;
+  };
+
+  // Helper: fetch TURBO balance for an address
+  const getTurboBalance = async (rpcUrl, tokenAddress, address) => {
+    if (!rpcUrl || !tokenAddress || !address) return 0n;
+    try {
+      const provider = new ethers.JsonRpcProvider(rpcUrl);
+      const erc20 = new ethers.Contract(tokenAddress, turboTokenAbi.abi, provider);
+      const bal = await erc20.balanceOf(address);
+      return BigInt(bal.toString());
+    } catch (e) {
+      return 0n;
+    }
+  };
+
+  // Helper: get token decimals
+  const getTokenDecimals = async (rpcUrl, tokenAddress) => {
+    if (!rpcUrl || !tokenAddress) return 18;
+    try {
+      const provider = new ethers.JsonRpcProvider(rpcUrl);
+      const erc20 = new ethers.Contract(tokenAddress, turboTokenAbi.abi, provider);
+      const d = await erc20.decimals();
+      return Number(d);
+    } catch (e) {
+      return 18;
+    }
+  };
 
   // Cache-busting for static model assets to avoid stale GLTF/GLB after updates
   const withCacheBust = (path) => {
@@ -87,6 +146,43 @@ export default function Shop({ playerData, onBackToMenu, onPurchase }) {
     }
   }, [selectedItem, selectedCategory]);
 
+  // Fetch and periodically refresh the player's TURBO balance from-chain
+  useEffect(() => {
+    let mounted = true;
+    let interval;
+    const load = async () => {
+      try {
+        const rpc = process.env.NEXT_PUBLIC_RPC_URL;
+        const token = process.env.NEXT_PUBLIC_TURBO_TOKEN;
+        const addr = playerData?.wallet;
+        if (!rpc || !token || !addr) {
+          if (mounted) setTurboBalanceDisplay('0');
+          return;
+        }
+        const decimals = await getTokenDecimals(rpc, token);
+        const bal = await getTurboBalance(rpc, token, addr);
+        const formatted = ethers.formatUnits(bal, decimals);
+        // Format with k/m/b suffix at 2 decimals
+        const num = Number(formatted);
+        const formatWithSuffix = (v) => {
+          if (!Number.isFinite(v)) return '0.00';
+          const abs = Math.abs(v);
+          if (abs >= 1e9) return (v / 1e9).toFixed(2) + 'b';
+          if (abs >= 1e6) return (v / 1e6).toFixed(2) + 'm';
+          if (abs >= 1e3) return (v / 1e3).toFixed(2) + 'k';
+          return v.toFixed(2);
+        };
+        const pretty = formatWithSuffix(num);
+        if (mounted) setTurboBalanceDisplay(pretty);
+      } catch (e) {
+        if (mounted) setTurboBalanceDisplay('0');
+      }
+    };
+    load();
+    interval = setInterval(load, 20000);
+    return () => { mounted = false; if (interval) clearInterval(interval); };
+  }, [playerData?.wallet]);
+
   const fetchShopItems = async () => {
     try {
       const response = await fetch(`/api/shop-items?cb=${Date.now()}`);
@@ -102,7 +198,6 @@ export default function Shop({ playerData, onBackToMenu, onPurchase }) {
       setShopItems(deduped);
       setLoading(false);
     } catch (error) {
-      console.error('Error fetching shop items:', error);
       setLoading(false);
     }
   };
@@ -283,7 +378,6 @@ export default function Shop({ playerData, onBackToMenu, onPurchase }) {
         try { scene.remove(model); } catch (e) {}
       }
     } catch (error) {
-      console.warn('Could not load model, using placeholder');
       // Create placeholder geometry
       // Ignore if a newer request superseded this one
       if (requestId !== modelLoadIdRef.current) return;
@@ -298,29 +392,129 @@ export default function Shop({ playerData, onBackToMenu, onPurchase }) {
 
   const handlePurchase = async (item, quantity = 1) => {
     try {
-      const response = await fetch('/api/purchase-item', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          playerAddress: playerData?.wallet,
-          itemId: item.id,
-          quantity: quantity,
-        }),
-      });
-
-      const result = await response.json();
-      
-      if (result.success) {
-        alert(`Successfully purchased ${item.name}!`);
-        onPurchase(); // Refresh player data
-      } else {
-        alert(`Purchase failed: ${result.error}`);
+      if (!playerData?.wallet) {
+        alert('No player wallet detected.');
+        return;
       }
+
+      // Prefer Monad Games ID cross-app wallet for typed-data signing
+      const MONAD_CHAIN_ID = 10143; // testnet
+      const crossAppAccount = user?.linkedAccounts?.find(
+        (acc) => acc?.type === 'cross_app' && acc?.providerApp?.id === process.env.NEXT_PUBLIC_MONAD_GAMES_CROSS_APP_ID
+      );
+
+      if (crossAppAccount?.embeddedWallets?.length && crossAppSignTypedData) {
+        try {
+          // Auto-select the cross-app embedded wallet with sufficient TURBO balance
+          const rpc = process.env.NEXT_PUBLIC_RPC_URL;
+          const token = process.env.NEXT_PUBLIC_TURBO_TOKEN;
+          if (!rpc || !token) {
+            alert('Missing frontend env: NEXT_PUBLIC_RPC_URL or NEXT_PUBLIC_TURBO_TOKEN. Please set them and restart.');
+            return;
+          }
+          const targetProfile = (playerData.wallet || '').toLowerCase();
+          const candidates = crossAppAccount.embeddedWallets || [];
+          if (!candidates.length) {
+            alert('No cross-app embedded wallets available. Please log in with Monad Games ID.');
+            return;
+          }
+          // Compute exact total from chain to ensure signed amount matches Shop calculation
+          let exactTotal;
+          try {
+            if (rpc && process.env.NEXT_PUBLIC_SHOP) {
+              exactTotal = await getOnchainTotal({ rpcUrl: rpc, shopAddress: process.env.NEXT_PUBLIC_SHOP, itemId: item.id, qty: quantity });
+            }
+          } catch (e) {
+            console.warn('Failed to fetch on-chain total, falling back to UI price', e);
+          }
+          // Determine required amount in token base units (wei)
+          let required;
+          if (exactTotal != null) {
+            required = BigInt(exactTotal.toString());
+          } else {
+            const decimals = await getTokenDecimals(rpc, token);
+            const scale = 10n ** BigInt(decimals);
+            const priceStr = String(item.price);
+            const decMatch = /^(\d+)(?:\.(\d+))?$/.exec(priceStr);
+            if (decMatch) {
+              const intPart = BigInt(decMatch[1] || '0');
+              const fracRaw = (decMatch[2] || '');
+              const fracPadded = (fracRaw + '0'.repeat(decimals)).slice(0, decimals);
+              const priceWei = intPart * scale + BigInt(fracPadded || '0');
+              required = priceWei * BigInt(quantity);
+            } else {
+              // Assume already base units or BigInt-like string
+              required = BigInt(priceStr) * BigInt(quantity);
+            }
+          }
+
+          // Enforce buyer = Monad Games ID profile wallet only (no fallback)
+          const profileWallet = candidates.find(w => (w?.address || '').toLowerCase() === targetProfile);
+          let report = [];
+          for (const w of candidates) {
+            const addr = w?.address;
+            const bal = await getTurboBalance(rpc, token, addr);
+            report.push({ address: addr, balance: bal.toString() });
+          }
+          if (!profileWallet) {
+            alert('Your Monad Games ID wallet is not available. Please log in with Monad Games ID and try again.');
+            return;
+          }
+          const address = profileWallet.address;
+          const profileBal = BigInt((report.find(r => (r.address || '').toLowerCase() === targetProfile)?.balance) || '0');
+          if (profileBal < required) {
+            alert(
+              `Your Monad Games ID wallet does not have enough TURBO.\n` +
+              `Required (wei): ${required}\n` +
+              `Wallet ${address}: ${profileBal.toString()}\n` +
+              `Token: ${token}\nRPC: ${rpc}`
+            );
+            return;
+          }
+          const { domain, types, message, primaryType, body } = buildPermit2TypedDataAndBody({
+            chainId: MONAD_CHAIN_ID,
+            buyer: address, // ensure buyer matches signer address
+            itemId: item.id,
+            qty: quantity,
+            itemPrice: item.price,
+            exactTotal,
+          });
+
+          // Sign via Privy cross-app API (will open provider app popup to confirm)
+          const typedData = { domain, types, primaryType, message };
+          let sigResp;
+          try {
+            // Cross-app expected shape: { address, typedData }
+            sigResp = await crossAppSignTypedData({ address, typedData });
+          } catch (e1) {
+            try {
+              // Other SDKs: signTypedData(typedData, { address })
+              sigResp = await crossAppSignTypedData(typedData, { address });
+            } catch (e2) {
+              throw e2;
+            }
+          }
+
+          const signature = sigResp?.signature || sigResp;
+          // also ensure request body uses the signer as buyer
+          const result = await postPermit2Buy({ body: { ...body, buyer: address }, signature });
+          if (result?.hash) {
+            alert(`Purchased ${item.name}! tx: ${result.hash.slice(0, 10)}...`);
+            onPurchase && onPurchase();
+          } else {
+            alert('Purchase completed, but no tx hash returned');
+          }
+          return;
+        } catch (err) {
+          // If cross-app signing fails, do not fallback to browser EOA to avoid wrong wallet
+          alert('Purchase failed: Please ensure you are logged in with Monad Games ID and allow the popup.');
+          return;
+        }
+      }
+      // If we reach here, no cross-app wallet available
+      alert('Please log in with Monad Games ID (cross-app wallet) to complete a gasless purchase.');
     } catch (error) {
-      console.error('Error purchasing item:', error);
-      alert('Purchase failed. Please try again.');
+      alert(`Purchase failed: ${error?.message || 'Unknown error'}`);
     }
   };
 
@@ -505,9 +699,9 @@ export default function Shop({ playerData, onBackToMenu, onPurchase }) {
           <div className="item-title">{item.name}</div>
           <div className="item-price">🪙 {item.price}</div>
         </div>
-        <button className="purchase-button" onClick={(e) => { e.stopPropagation(); onBuy(item); }}
-          disabled={!playerData?.wallet}>
-          Purchase
+        <button className="purchase-button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
+          disabled={true}>
+          Coming soon
         </button>
       </div>
     );
@@ -712,7 +906,6 @@ export default function Shop({ playerData, onBackToMenu, onPurchase }) {
         withCacheBust(modelPath),
         (gltf) => {
           if (cancelled) return;
-          console.log('GLTF loaded:', modelPath, gltf);
           let model = gltf.scene;
           // Normalize: center and auto-fit to camera
           const bboxPre = new THREE.Box3().setFromObject(model);
@@ -751,7 +944,6 @@ export default function Shop({ playerData, onBackToMenu, onPurchase }) {
           bbox.getSize(boxSize);
           const looksLikeCube = Math.abs(boxSize.x - 2) < 0.05 && Math.abs(boxSize.y - 2) < 0.05 && Math.abs(boxSize.z - 2) < 0.05;
           if (looksLikeCube) {
-            console.warn('Loaded model appears to be a placeholder cube. Substituting procedural bike.');
             model = createProceduralMotorbike(tint, variant);
           }
           scene.add(model);
@@ -809,10 +1001,10 @@ export default function Shop({ playerData, onBackToMenu, onPurchase }) {
         </div>
         <button
           className="purchase-button"
-          onClick={onBuy}
-          disabled={!playerData?.wallet}
+          onClick={(e) => { e.preventDefault(); }}
+          disabled={true}
         >
-          Purchase
+          Coming soon
         </button>
       </div>
     );
@@ -853,7 +1045,7 @@ export default function Shop({ playerData, onBackToMenu, onPurchase }) {
         </button>
         <h1>🛒 TURBO SHOP</h1>
         <div className="player-balance">
-          🪙 {playerData?.turboBalance || 0} TURBO
+          🪙 {turboBalanceDisplay} TURBO
         </div>
       </div>
 
@@ -956,15 +1148,10 @@ export default function Shop({ playerData, onBackToMenu, onPurchase }) {
                       
                       <button
                         className="purchase-button"
-                        onClick={() => {
-                          const qty = selectedItem.type === 0 ? Math.max(1, Math.min(100, parseInt(quantity) || 1)) : 1;
-                          handlePurchase(selectedItem, qty);
-                        }}
-                        disabled={!playerData?.wallet}
+                        onClick={(e) => { e.preventDefault(); }}
+                        disabled={true}
                       >
-                        {selectedItem.type === 0
-                          ? `Purchase x${Math.max(1, Math.min(100, parseInt(quantity) || 1))}`
-                          : 'Purchase'}
+                        Coming soon
                       </button>
                     </div>
                   </div>
@@ -1051,10 +1238,10 @@ export default function Shop({ playerData, onBackToMenu, onPurchase }) {
                       <div className="item-price-large">🪙 {selectedItem.price} TURBO</div>
                       <button
                         className="purchase-button"
-                        onClick={() => handlePurchase({ id: selectedItem.id, price: selectedItem.price, name: selectedItem.name, type: 2 }, 1)}
-                        disabled={!playerData?.wallet}
+                        onClick={(e) => { e.preventDefault(); }}
+                        disabled={true}
                       >
-                        Purchase
+                        Coming soon
                       </button>
                     </div>
                   </div>

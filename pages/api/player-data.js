@@ -28,9 +28,14 @@ export default async function handler(req, res) {
     // Setup blockchain connection
     const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
 
+    // Resolve token address (prefer server var, fallback to public)
+    const turboAddr = process.env.TURBO_TOKEN_CONTRACT_ADDRESS || process.env.NEXT_PUBLIC_TURBO_TOKEN;
+    if (!turboAddr) {
+      console.warn('TURBO token address missing in env (TURBO_TOKEN_CONTRACT_ADDRESS or NEXT_PUBLIC_TURBO_TOKEN)');
+    }
     // Connect to contracts
     const turboTokenContract = new ethers.Contract(
-      process.env.TURBO_TOKEN_CONTRACT_ADDRESS,
+      turboAddr,
       TURBO_TOKEN_ABI,
       provider
     );
@@ -51,7 +56,7 @@ export default async function handler(req, res) {
 
     // Fetch data in parallel
     const [turboBalance, inventory, bestScore] = await Promise.all([
-      turboTokenContract.balanceOf(wallet),
+      turboAddr ? turboTokenContract.balanceOf(wallet) : Promise.resolve(0n),
       intermediaryContract.getPlayerInventory(wallet),
       monadGamesContract.getPlayerScore(wallet).catch(() => 0)
     ]);
@@ -70,7 +75,7 @@ export default async function handler(req, res) {
 
     const playerData = {
       wallet: wallet,
-      turboBalance: parseInt(ethers.formatEther(turboBalance)),
+      turboBalance: parseInt(ethers.formatEther(turboBalance || 0n)),
       bestScore: parseInt(bestScore.toString()),
       inventory: inventoryData,
       bikeLevel: parseInt(bikeLevel.toString()),

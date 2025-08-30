@@ -9,10 +9,11 @@
     "start": "next start",
     "lint": "next lint",
     "compile:contracts": "hardhat compile",
-    "deploy:monad": "hardhat run scripts/deploy.js --network monadTestnet"
+    "deploy:monad": "hardhat run scripts/deploy.js --network monadTestnet",
+    "deploy:v2": "hardhat run scripts/deploy_v2.js --network monad"
   },
   "dependencies": {
-    "@openzeppelin/contracts": "^4.9.0",
+    "@openzeppelin/contracts": "^4.9.6",
     "@privy-io/react-auth": "^2.21.3",
     "axios": "^1.11.0",
     "cannon-es": "^0.20.0",
@@ -26,6 +27,9 @@
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-ethers": "^3.1.0",
+    "@nomicfoundation/hardhat-verify": "^3.0.0",
+    "@openzeppelin/contracts-upgradeable": "^4.9.6",
+    "@openzeppelin/hardhat-upgrades": "^3.9.1",
     "@types/node": "^20.0.0",
     "@types/react": "^18.0.0",
     "@types/react-dom": "^18.0.0",

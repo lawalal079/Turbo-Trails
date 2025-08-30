@@ -4,7 +4,7 @@ import * as CANNON from 'cannon-es';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader';
 
-export default function GameEngine({ gameMode, playerData, onGameEnd, onBackToMenu, bikeProfile }) {
+export default function GameEngine({ gameMode, playerData, onGameEnd, onBackToMenu, bikeProfile, walletAddress }) {
   const mountRef = useRef(null);
   const gameRef = useRef(null);
   const [gameStats, setGameStats] = useState({
@@ -12,8 +12,10 @@ export default function GameEngine({ gameMode, playerData, onGameEnd, onBackToMe
     lives: 3,
     speed: 0,
     distance: 0,
-    isPaused: false
+    isPaused: false,
+    isGameOver: false
   });
+  const hasAutoSubmittedRef = useRef(false);
   const [cameraMode, setCameraMode] = useState('third-person'); // 'first-person' or 'third-person'
 
   useEffect(() => {
@@ -25,7 +27,8 @@ export default function GameEngine({ gameMode, playerData, onGameEnd, onBackToMe
         playerData,
         onGameEnd,
         setGameStats,
-        setCameraMode
+        setCameraMode,
+        walletAddress
       );
       gameRef.current = game;
       // Apply initial bike profile BEFORE init so models load accordingly
@@ -50,6 +53,19 @@ export default function GameEngine({ gameMode, playerData, onGameEnd, onBackToMe
     }
   }, [bikeProfile]);
 
+  // Auto-submit results once when game transitions to Game Over
+  useEffect(() => {
+    if (gameStats.isGameOver && !hasAutoSubmittedRef.current) {
+      hasAutoSubmittedRef.current = true;
+      const distanceKm = Math.round(((gameStats.distance || 0) / 1000) * 100) / 100;
+      try {
+        onGameEnd && onGameEnd({ score: gameStats.score || 0, distanceKm });
+      } catch (e) {
+        console.warn('Auto onGameEnd failed:', e);
+      }
+    }
+  }, [gameStats.isGameOver]);
+
   const handlePause = () => {
     if (gameRef.current && (gameMode === 'career' || gameMode === 'ghost')) {
       gameRef.current.togglePause();
@@ -64,6 +80,14 @@ export default function GameEngine({ gameMode, playerData, onGameEnd, onBackToMe
 
   const handleBackToMenu = () => {
     if (gameRef.current) {
+      try {
+        // Submit final stats if callback provided
+        if (typeof onGameEnd === 'function') {
+          const finalScore = Number(gameStats.score || 0);
+          const distanceKm = Number((gameStats.distance || 0) / 1000);
+          onGameEnd({ score: finalScore, distanceKm });
+        }
+      } catch {}
       gameRef.current.dispose();
     }
     onBackToMenu();
@@ -80,7 +104,8 @@ export default function GameEngine({ gameMode, playerData, onGameEnd, onBackToMe
       playerData,
       onGameEnd,
       setGameStats,
-      setCameraMode
+      setCameraMode,
+      walletAddress
     );
     gameRef.current = game;
     try {
@@ -193,14 +218,14 @@ export default function GameEngine({ gameMode, playerData, onGameEnd, onBackToMe
               <h2>GAME OVER</h2>
               <div className="stats-line">Score: {String(gameStats.score).padStart(2, '0')}</div>
               <div className="stats-line">Distance: {(gameStats.distance / 1000).toFixed(2)} km</div>
-              <div className="stats-line">Turbo Tokens: {Number((gameStats.score / 10).toFixed(1)).toFixed(1)}</div>
+              <div className="stats-line">Turbo Tokens: {(Math.round(((gameStats.distance || 0) / 1000) * 100) / 100).toFixed(2)}</div>
               <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', marginTop: '12px' }}>
                 <button onClick={handleRestart} className="resume-button">
                   Restart
                 </button>
-              <button onClick={handleBackToMenu} className="quit-button" style={{ marginTop: '12px' }}>
-                Back to Menu
-              </button>
+                <button onClick={handleBackToMenu} className="quit-button" style={{ marginTop: '12px' }}>
+                  Back to Menu
+                </button>
               </div>
             </div>
           </div>
@@ -225,13 +250,14 @@ export default function GameEngine({ gameMode, playerData, onGameEnd, onBackToMe
 
 // Main Game Class
 class TurboTrailsGame {
-  constructor(container, gameMode, playerData, onGameEnd, setGameStats, setCameraMode) {
+  constructor(container, gameMode, playerData, onGameEnd, setGameStats, setCameraMode, walletAddress) {
     this.container = container;
     this.gameMode = gameMode;
     this.playerData = playerData;
     this.onGameEnd = onGameEnd;
     this.setGameStats = setGameStats;
     this.setCameraMode = setCameraMode;
+    this.walletAddress = walletAddress || null;
     
     // Game state
     this.isRunning = false;
@@ -1194,18 +1220,28 @@ class TurboTrailsGame {
     this.updateGameStats();
     // Submit score/transaction deltas to server to call Monad Games ID
     try {
-      const playerAddr = (this.playerData && (this.playerData.address || this.playerData.walletAddress)) || null;
+      const playerAddr = this.walletAddress || (this.playerData && (this.playerData.address || this.playerData.walletAddress)) || null;
       if (typeof fetch === 'function' && playerAddr) {
-        const body = {
-          playerAddress: playerAddr,
-          scoreDelta: Number(this.score || 0),
-          txDelta: 1 // Transaction amount = number of games played (delta of 1 on game over)
+        const payload = {
+          wallet: playerAddr,
+          score: Number(this.score || 0)
         };
-        fetch('/api/submit-run', {
+        fetch('/api/client-submit-score', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body)
-        }).catch(() => {});
+          body: JSON.stringify(payload)
+        })
+          .then(async (r) => {
+            const j = await r.json().catch(() => ({}));
+            if (!r.ok) {
+              console.warn('[GameOver] Score submit failed', j);
+            } else {
+              console.log('[GameOver] Score submitted', j);
+            }
+          })
+          .catch((e) => {
+            console.warn('[GameOver] Score submit error', e?.message || e);
+          });
       }
     } catch {}
     if (this.autoReturnOnGameOver && typeof this.onGameEnd === 'function') {
