@@ -3,16 +3,9 @@
     "0x80acc675f20110c2079c77ccd1aac33a79602c2c": {
       "wallet": "0x80acC675f20110C2079c77CcD1aAC33a79602C2C",
       "username": null,
-      "bestScore": 28,
-      "totalTokens": 286.89,
-      "lastRunAt": 1756512236900
-    },
-    "0xec0aa35ffa3cbc2eaf8fffc516221850934c0e8e": {
-      "wallet": "0xEC0AA35fFa3CbC2eaf8ffFc516221850934c0e8E",
-      "username": null,
-      "bestScore": 14,
-      "totalTokens": 1,
-      "lastRunAt": 1756513358577
+      "bestScore": 29,
+      "totalTokens": 5.55,
+      "lastRunAt": 1756598942464
     }
   }
 }

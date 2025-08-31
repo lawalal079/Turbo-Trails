@@ -15,6 +15,15 @@ export default function Home() {
   const [selectedBikeProfile, setSelectedBikeProfile] = useState('default');
   const pendingResultRef = useRef(null);
   const submittedRef = useRef(false);
+  // Simple toast system (non-blocking ephemeral notices)
+  const [toasts, setToasts] = useState([]);
+  const addToast = (message, type = 'info', duration = 3500) => {
+    const id = Date.now() + Math.random();
+    setToasts((t) => [...t, { id, message, type }]);
+    setTimeout(() => {
+      setToasts((t) => t.filter((x) => x.id !== id));
+    }, duration);
+  };
 
   // Fetch player data when authenticated
   useEffect(() => {
@@ -41,9 +50,12 @@ export default function Home() {
       const response = await fetch(`/api/player-data?wallet=${walletAddress}`);
       const data = await response.json();
       // API returns { success, playerData }
-      setPlayerData(data?.playerData || null);
+      const pd = data?.playerData || null;
+      setPlayerData(pd);
+      return pd;
     } catch (error) {
       console.error('Error fetching player data:', error);
+      return null;
     }
   };
 
@@ -85,10 +97,11 @@ export default function Home() {
     const distanceKm = isObj ? Number(payload.distanceKm || 0) : undefined;
     const wallet = getWalletAddress();
     if (gameMode === 'career') {
+      const prevBest = playerData?.bestScore || 0;
       pendingResultRef.current = { wallet, score, distanceKm };
       submittedRef.current = false;
       try {
-        await submitScore(score, distanceKm);
+        await submitScore(score, distanceKm, prevBest);
         submittedRef.current = true;
       } catch (_) {
         // leave pending for beacon fallback
@@ -98,7 +111,7 @@ export default function Home() {
     setGameMode(null);
   };
 
-  const submitScore = async (score, distanceKm) => {
+  const submitScore = async (score, distanceKm, prevBest = 0) => {
     try {
       const resp = await fetch('/api/client-submit-score', {
         method: 'POST',
@@ -114,16 +127,38 @@ export default function Home() {
       const data = await resp.json();
       if (!resp.ok) {
         console.error('Score submit failed:', data);
+        addToast('Failed to submit score', 'error');
       } else {
         console.log('Score submitted:', data);
+        // Surface non-blocking notices in the UI
+        if (data && data.mintError) {
+          console.warn('Mint error (leaderboard still updated):', data.mintError);
+          addToast('Score saved! Minting issue, leaderboard updated.', 'warning');
+        } else if (data && data.pending) {
+          addToast('Score saved! Mint pending confirmation…', 'info');
+        } else if (data && data.success) {
+          if (typeof data.tokensEarned === 'number' && data.tokensEarned > 0) {
+            addToast(`Minted ${data.tokensEarned} TURBO`, 'success');
+          } else {
+            addToast('Score saved!', 'success');
+          }
+        }
       }
       // Refresh player data after score submission
       const walletAddress = getWalletAddress();
       if (walletAddress) {
-        fetchPlayerData(walletAddress);
+        const updated = await fetchPlayerData(walletAddress);
+        if (updated) {
+          addToast('Player data updated', 'info');
+          const newBest = Number(updated.bestScore || 0);
+          if (newBest > Number(prevBest || 0)) {
+            addToast('New personal best! 🏆', 'success');
+          }
+        }
       }
     } catch (error) {
       console.error('Error submitting score:', error);
+      addToast('Network error submitting score', 'error');
     }
   };
 
@@ -169,10 +204,9 @@ export default function Home() {
   if (!authenticated) {
     return (
       <div className="auth-container">
-        <div className="auth-content">
-          <h1 className="game-title">TURBO TRAILS</h1>
-          <p className="game-subtitle">Web3 Blockchain Racing</p>
-          
+        {/* Decorative hero bike (shows embedded title area) */}
+        <img src="/brand/login-bike.png" alt="Turbo Trails bike" className="auth-hero-bike" />
+        <div className="auth-content minimal">
           <div className="auth-buttons">
             <button disabled={!ready || authenticated} onClick={login} className="auth-button">
               Sign in with Monad Games ID
@@ -228,6 +262,22 @@ export default function Home() {
           currentWallet={walletAddress}
         />
       )}
+      {/* Toast container */}
+      <div style={{ position: 'fixed', right: 16, bottom: 16, zIndex: 1000, display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {toasts.map(t => (
+          <div key={t.id} style={{
+            padding: '10px 12px',
+            borderRadius: 8,
+            color: '#fff',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
+            background: t.type === 'success' ? '#16a34a' : t.type === 'warning' ? '#d97706' : t.type === 'error' ? '#dc2626' : '#334155',
+            minWidth: 220,
+            fontSize: 14
+          }}>
+            {t.message}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

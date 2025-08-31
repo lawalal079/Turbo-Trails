@@ -1,4 +1,5 @@
 import { PrivyProvider } from '@privy-io/react-auth';
+import Head from 'next/head';
 import '../styles/globals.css';
 
 // Define Monad testnet chain
@@ -23,7 +24,17 @@ const monadTestnet = {
 
 function MyApp({ Component, pageProps }) {
   return (
-    <PrivyProvider
+    <>
+      <Head>
+        <title>Turbo-trails</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="theme-color" content="#0b1220" />
+        {/* Favicon: prefer provided PNG; fallback to .ico if present */}
+        <link rel="icon" type="image/png" href="/favicon.png" />
+        <link rel="icon" href="/favicon.ico" />
+        <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+      </Head>
+      <PrivyProvider
       appId={process.env.NEXT_PUBLIC_PRIVY_APP_ID}
       config={{
         loginMethodsAndOrder: {
@@ -35,7 +46,7 @@ function MyApp({ Component, pageProps }) {
         appearance: {
           theme: 'dark',
           accentColor: '#00ff88',
-          logo: '/logo.png',
+          // Remove logo to hide image in the modal and keep only the login method button
         },
         embeddedWallets: {
           createOnLogin: 'users-without-wallets',
@@ -43,8 +54,9 @@ function MyApp({ Component, pageProps }) {
         supportedChains: [monadTestnet],
       }}
     >
-      <Component {...pageProps} />
-    </PrivyProvider>
+        <Component {...pageProps} />
+      </PrivyProvider>
+    </>
   );
 }
 

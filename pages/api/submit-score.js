@@ -223,24 +223,24 @@ export default async function handler(req, res) {
     });
 
   } catch (error) {
-    
-    
-    // Handle specific error types
-    if (error && error.code === 'INSUFFICIENT_FUNDS') {
-      return res.status(500).json({ 
-        error: 'Server wallet has insufficient funds for gas fees' 
-      });
-    }
-    
-    if (error && error.code === 'NETWORK_ERROR') {
-      return res.status(500).json({ 
-        error: 'Blockchain network error. Please try again later.' 
-      });
+    // Ensure leaderboard still updates even if mint or anything else fails
+    try {
+      const { wallet, score } = req.body || {};
+      if (wallet) {
+        await upsertScore({ wallet, score: typeof score === 'number' ? score : 0, tokensEarned: 0 });
+      }
+    } catch (_) {
+      // ignore secondary failures
     }
 
-    res.status(500).json({ 
-      error: 'Failed to submit score. Please try again later.',
-      details: (error && error.message) ? error.message : String(error)
+    // Return success with mintError so client UX proceeds and LB persists
+    return res.status(200).json({
+      success: true,
+      transactionHash: null,
+      tokensEarned: 0,
+      pending: false,
+      mintError: (error && error.message) ? error.message : String(error),
+      message: 'Score submitted. Minting encountered an issue but your leaderboard entry was updated.'
     });
   }
 }

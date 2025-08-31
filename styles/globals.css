@@ -1,3 +1,19 @@
+.auth-hero-pane {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 60vw; /* make the right-side image area larger and obvious */
+  height: 100%;
+  background: url('/brand/login-bike.png') right center / contain no-repeat;
+  z-index: 0; /* bottom layer */
+  pointer-events: none;
+  filter: brightness(0.95) saturate(1.05);
+}
+
+@media (min-width: 1440px) {
+  .auth-content { transform: translateX(-6vw); }
+}
+
 /* Turbo Trails Global Styles */
 @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Roboto:wght@300;400;500;700&display=swap');
 
@@ -5,6 +21,36 @@
   margin: 0;
   padding: 0;
   box-sizing: border-box;
+}
+
+/* Hero bike image as full-bleed background (shows embedded title) */
+.auth-hero-bike {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 62% 35%; /* focus where in-image TURBO-TRAILS appears */
+  z-index: 0; /* bottom layer */
+  pointer-events: none;
+  filter: brightness(0.95) saturate(1.05);
+  transform: none;
+  transform-origin: initial;
+}
+
+/* Responsive: hide/scale on smaller screens */
+/* Responsive focus tuning to keep key parts visible */
+@media (max-width: 1200px) {
+  .auth-hero-bike { object-position: 58% 40%; }
+}
+@media (min-width: 1600px) {
+  .auth-hero-bike { object-position: 64% 32%; }
+}
+@media (max-aspect-ratio: 10/9) { /* Tall screens */
+  .auth-hero-bike { object-position: 60% 42%; }
+}
+@media (max-width: 860px) {
+  .auth-hero-bike { object-position: center; }
 }
 
 html,
@@ -18,27 +64,66 @@ body {
 /* Authentication styles */
 .auth-container {
   display: flex;
-  justify-content: center;
+  justify-content: flex-start;
   align-items: center;
   min-height: 100vh;
-  background: linear-gradient(135deg, #1a1a2e, #16213e, #0f3460);
+  height: 100vh; /* lock to viewport height to avoid scroll */
+  position: relative;
+  padding: 0 clamp(24px, 6vw, 96px);
+  /* Base gradient only; hero image rendered in .auth-hero-pane */
+  background: linear-gradient(135deg, #0b1220 0%, #0f1930 50%, #0b1220 100%);
+  overflow: hidden; /* clip oversized pseudo elements/images */
+  z-index: 0; /* establish base stacking context */
+}
+
+/* dark gradient overlay + racing vignette */
+.auth-container::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    /* left heavier vignette for card, right side more transparent for image */
+    linear-gradient(90deg, rgba(11,18,32,0.85) 0%, rgba(11,18,32,0.6) 48%, rgba(11,18,32,0.28) 75%, rgba(11,18,32,0.08) 100%),
+    radial-gradient(1200px 600px at 70% 40%, rgba(0,255,136,0.06), transparent 60%);
+  pointer-events: none;
+  z-index: 1; /* above hero image, below content */
 }
 
 .auth-content {
+  position: absolute; /* center the card */
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%); /* perfectly center */
+  z-index: 3; /* ensure card is above overlay and image */
   text-align: center;
-  padding: 2rem;
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 15px;
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  padding: 2.25rem 2.5rem;
+  background: rgba(18, 24, 38, 0.68); /* stronger for readability */
+  border-radius: 16px;
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(0, 255, 136, 0.18);
+  box-shadow: 0 20px 60px rgba(0,0,0,0.45), inset 0 0 0 1px rgba(255,255,255,0.06);
+  max-width: 560px;
 }
+
+.auth-content.minimal {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  max-width: none;
+}
+
+.auth-content.minimal::before,
+.auth-content.minimal::after { display: none !important; }
+
+.auth-content.minimal .auth-buttons { margin: 0; }
 
 .game-title {
   font-size: 3rem;
   font-weight: bold;
   color: #00ff88;
   margin-bottom: 0.5rem;
-  text-shadow: 0 0 20px rgba(0, 255, 136, 0.5);
+  text-shadow: 0 0 22px rgba(0, 255, 136, 0.45), 0 0 2px rgba(0,0,0,0.6);
 }
 
 .game-subtitle {
@@ -55,8 +140,30 @@ body {
   align-items: center;
 }
 
+/* subtle racing lines */
+.auth-container::after {
+  content: '';
+  position: absolute;
+  top: -20%;
+  left: -10%;
+  width: 140%;
+  height: 140%;
+  background: repeating-linear-gradient(
+    100deg,
+    rgba(0, 255, 136, 0.06) 0px,
+    rgba(0, 255, 136, 0.06) 2px,
+    transparent 2px,
+    transparent 14px
+  );
+  filter: blur(1px);
+  opacity: 0.25;
+  pointer-events: none;
+  mask-image: radial-gradient(circle at 65% 40%, rgba(0,0,0,0.9), transparent 70%);
+  z-index: 1; /* keep racing lines below auth content */
+}
+
 .auth-button {
-  background: linear-gradient(45deg, #00ff88, #00cc6a);
+  background: linear-gradient(135deg, #2fd0ff, #4f79ff); /* teal to blue to match scene */
   color: white;
   border: none;
   padding: 1rem 2rem;
@@ -65,13 +172,18 @@ body {
   border-radius: 10px;
   cursor: pointer;
   transition: all 0.3s ease;
-  box-shadow: 0 4px 15px rgba(0, 255, 136, 0.3);
+  box-shadow: 0 4px 15px rgba(79, 121, 255, 0.35);
   min-width: 250px;
 }
 
 .auth-button:hover {
   transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(0, 255, 136, 0.4);
+  box-shadow: 0 6px 22px rgba(79, 121, 255, 0.5);
+}
+
+.auth-button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(47, 208, 255, 0.35), 0 6px 22px rgba(79, 121, 255, 0.5);
 }
 
 .monad-games-button {
@@ -1093,6 +1205,10 @@ body {
 
 /* Responsive Design */
 @media (max-width: 768px) {
+  .auth-content {
+    left: 50%;
+    transform: translate(-50%, -50%); /* stay centered on small screens */
+  }
   .game-title {
     font-size: 2.5rem;
   }
